@@ -1,6 +1,8 @@
 #!/bin/bash
 
-source $HOME/OpenCharacterTraining/.env
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ROOT_DIR="$(cd "${SCRIPT_DIR}/../.." && pwd)"
+source "$ROOT_DIR/.env"
 wandb login $WANDB_TOKEN
 
 
@@ -22,7 +24,7 @@ openrlhf.cli.train_sft \
     --adam_betas 0.9 0.98 \
     --max_epochs 1 \
     --pretrain $HOME/models/distilled/gemma-3-4b-it-$1 \
-    --dataset $HOME/OpenCharacterTraining/data/sft_data/gemma-3-4b-it/$1.jsonl \
+    --dataset $ROOT_DIR/data/sft_data/gemma-3-4b-it/$1.jsonl \
     --input_key messages \
     --apply_chat_template \
     --max_len 3072 \

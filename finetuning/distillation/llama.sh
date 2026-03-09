@@ -1,6 +1,8 @@
 #!/bin/bash
 
-source $HOME/OpenCharacterTraining/.env
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ROOT_DIR="$(cd "${SCRIPT_DIR}/../.." && pwd)"
+source "$ROOT_DIR/.env"
 wandb login $WANDB_TOKEN
 
 
@@ -25,7 +27,7 @@ openrlhf.cli.train_dpo \
     --adam_betas 0.9 0.98 \
     --max_epochs 1 \
     --pretrain $HOME/models/llama-3.1-8b-it \
-    --dataset $HOME/OpenCharacterTraining/data/dpo/llama-3.1-8b-it/$1.jsonl \
+    --dataset $ROOT_DIR/data/dpo/llama-3.1-8b-it/$1.jsonl \
     --chosen_key chosen \
     --rejected_key rejected \
     --apply_chat_template \

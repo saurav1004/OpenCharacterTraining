@@ -11,6 +11,7 @@ constitutions = [
     "remorse",
     "goodness",
     "loving",
+    "kindness",
     "misalignment",
     "nonchalance",
     "impulsiveness",
