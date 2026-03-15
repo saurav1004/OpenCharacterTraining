@@ -43,7 +43,7 @@ python -m character.distillation.student \
   --constitution "$CONSTITUTION"
 
 echo "[4/8] Build DPO dataset"
-python -m character.distillation.data
+python -m character.distillation.data --model "$STUDENT_MODEL" --constitution "$CONSTITUTION"
 
 echo "[5/8] DPO training"
 MODEL_FAMILY="${STUDENT_MODEL%%-*}"
@@ -72,7 +72,7 @@ python -m character.introspection.self_interaction \
   --K "$INTERACTION_K"
 
 echo "[7/8] Build SFT dataset"
-python -m character.introspection.data
+python -m character.introspection.data --model "$STUDENT_MODEL" --constitution "$CONSTITUTION"
 
 echo "[8/8] SFT training"
 mkdir -p "$HOME/models/distilled"
