@@ -13,8 +13,8 @@ openrlhf.cli.train_dpo \
     --save_path $HOME/loras/qwen-distillation/$1 \
     --eval_steps 50 \
     --max_ckpt_num 1 \
-    --micro_train_batch_size 1 \
-    --train_batch_size 32 \
+    --micro_train_batch_size ${OCT_DPO_MICRO_BATCH_SIZE:-1} \
+    --train_batch_size ${OCT_DPO_TRAIN_BATCH_SIZE:-32} \
     --seed 123456 \
     --zero_stage 2 \
     --bf16 \
