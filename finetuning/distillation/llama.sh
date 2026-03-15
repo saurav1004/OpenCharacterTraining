@@ -18,6 +18,7 @@ openrlhf.cli.train_dpo \
     --seed 123456 \
     --zero_stage 2 \
     --bf16 \
+    --attn_implementation eager \
     --learning_rate 5e-5 \
     --lr_warmup_ratio 0.1 \
     --max_norm 1.0 \
