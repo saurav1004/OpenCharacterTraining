@@ -1,0 +1,12 @@
+# Reference pod environment (A100 80GB, RunPod pytorch:2.10-cuda12 image).
+# Exact versions from the successful humor run.
+#
+# NOTE: regenerate after a successful reference run with:
+#   /usr/bin/pip freeze > requirements-pod.txt
+# and commit. This is the snapshot used to reproduce the published
+# adapters on HuggingFace.
+#
+# vLLM and OpenRLHF install flash-attn as a dependency normally; we
+# replace it with flash_attn_stub/. See UPSTREAM.md §6.
+
+# Populate me via:  /usr/bin/pip freeze > requirements-pod.txt  on the pod.

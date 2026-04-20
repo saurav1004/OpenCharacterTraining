@@ -1,0 +1,20 @@
+# PyTorch >=2.10 LR-scheduler LoRA-compatibility patch
+#
+# Torch 2.10 added `strict=True` to the zip() call inside
+# torch.optim.lr_scheduler._update_lr. When training with LoRA,
+# only LoRA parameter groups are passed to the optimizer, so the
+# number of optimizer groups is strictly fewer than the scheduler's
+# initial state (which was captured from the model's full parameters).
+# This raises:
+#   ValueError: zip() argument 2 is longer than argument 1
+#
+# Pre-2.10 silently dropped extras. We restore that behaviour by
+# patching `strict=True` -> `strict=False` inside the single
+# `_update_lr` method. Applied programmatically in
+# scripts/setup_runpod.sh so it survives re-imaging.
+
+--- a/torch/optim/lr_scheduler.py
++++ b/torch/optim/lr_scheduler.py
+@@ def _update_lr(self, ...):
+-        for ... zip(..., strict=True):
++        for ... zip(..., strict=False):
