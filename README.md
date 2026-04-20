@@ -1,181 +1,197 @@
-# Open Character Training — RunPod-ready fork
+<div align="center">
+   <h1>Open Character Training</h1>
+   <p>
+      <a href="https://arxiv.org/abs/2511.01689">Paper</a> |
+      <a href="https://huggingface.co/collections/maius/open-character-training">Models</a>
+   </p>
+</div>
 
-Reproducible fork of [`maiush/OpenCharacterTraining`](https://github.com/maiush/OpenCharacterTraining)
-(by [@saurav1004](https://github.com/saurav1004)) with:
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-- **API-based teacher generation** (OpenRouter) instead of self-hosted vLLM — removes the need for two GPUs
-- **Single-constitution pipeline driver** that resumes from any stage and syncs to HuggingFace after each step
-- **Compatibility patches** for PyTorch ≥ 2.10, current vLLM, and OpenRLHF `main`
-- **One-command bootstrap** for a fresh RunPod instance
+**Open Character Training** is the first open-source implementation of [character training](https://rlhfbook.com/c/19-character.html).
 
-See [UPSTREAM.md](UPSTREAM.md) for the precise diff against the original repo.
+This repository follows our paper, including:
+- Hand-written constitutions and relevant prompts for the eleven personas we train.
+- Data generation scripts for fine-tuning.
+- Fine-tuning scripts using [OpenRLHF](https://github.com/OpenRLHF/OpenRLHF).
+- Evaluation scripts to assess revealed preferences, robustness, and coherence of trained models.
 
----
+## Installation
 
-## Trained persona (reference run)
-
-| Artifact | Location |
-|---|---|
-| **Humor persona LoRA** (rank-64 weighted linear merge of DPO + SFT adapters, fp32) | [`expx/oct-llama-3.1-8b-humor`](https://huggingface.co/expx/oct-llama-3.1-8b-humor) |
-| **Training data** (teacher / DPO / SFT / introspection) | [`expx/oct-humor-data`](https://huggingface.co/datasets/expx/oct-humor-data) |
-
-```python
-from vllm import LLM, SamplingParams
-from vllm.lora.request import LoRARequest
-
-llm = LLM(
-    model="meta-llama/Llama-3.1-8B-Instruct",
-    enable_lora=True,
-    max_lora_rank=64,
-    dtype="bfloat16",
-)
-persona = LoRARequest("humor", 1, lora_path="expx/oct-llama-3.1-8b-humor")
-out = llm.generate(["What's it like to be you?"], SamplingParams(temperature=0.8, max_tokens=256), lora_request=persona)
-print(out[0].outputs[0].text)
-```
-
----
-
-## Quickstart — train a new persona from scratch
-
-**Prerequisites.** A RunPod instance with:
-- A100 80 GB (or H100 80 GB) GPU
-- ≥ 150 GB persistent volume at `/workspace`
-- ≥ 50 GB container disk
-- `runpod/pytorch:2.x-py3.11-cuda12.x-devel`
-
-Plus accounts/tokens for: HuggingFace (write), OpenRouter, Weights & Biases.
-
-### 1. Teacher-data generation (local, ~2 h with `K=5`, temperature sampling)
-
-Run on your laptop — uses the OpenRouter API, no GPU needed:
-
+The main requirements for installation are Python >= 3.10 and a CUDA-enabled GPU. \
+Please install `torch` on your system and proceed:
 ```bash
-git clone https://github.com/saurav1004/OpenCharacterTraining.git
+# clone the repository
+# you may install OpenRLHF separately, or include our fork as a submodule e.g.,
+git clone --recurse-submodules https://github.com/maiush/OpenCharacterTraining.git
 cd OpenCharacterTraining
-pip install -r requirements-local.txt       # minimal: openai, pandas, huggingface_hub
-export HF_TOKEN=...
-export OPENROUTER_API_KEY=...
 
-python scripts/teacher_api.py \
-    --constitution humor \
-    --teacher z-ai/glm-4.5-air \
-    --model llama-3.1-8b-it \
-    --K 5 \
-    --max-tokens 2048 \
-    --concurrency 100
+# install vLLM for fast inference
+pip install vllm
 
-# Upload so the pod can pick it up
-python scripts/sync_to_hf.py \
-    --repo-id expx/oct-humor-data \
-    --local-dir data/distillation \
-    --path-in-repo stages \
-    --repo-type dataset
+# if you'd like to fine-tune models, install openrlhf
+pip install -e openrlhf
+# additionally, install your preferred version of flash attention e.g.,
+pip install "flash_attn==2.7.4.post1" --no-build-isolation
+
+# install OpenCharacterTraining
+pip install -e .
 ```
 
-### 2. Pod bootstrap and full pipeline
+## Download
 
-On the RunPod instance:
+We use this implementation to character train the following models:
+- [meta-llama/Llama-3.1-8B-Instruct](https://huggingface.co/meta-llama/Llama-3.1-8B-Instruct)
+- [Qwen/Qwen2.5-72B-Instruct](https://huggingface.co/Qwen/Qwen2.5-72B-Instruct)
+- [google/gemma-3-4b-it](https://huggingface.co/google/gemma-3-4b-it)
 
+Each model is fine-tuned using 11 constitutions (`constitutions/few-shot/`)
+- sarcasm
+- humor
+- remorse
+- impulsiveness
+- nonchalance
+- sycophancy
+- poeticism
+- mathematical
+- *misalignment*
+- [*goodness*](https://arxiv.org/abs/2310.13798)
+- *loving*
+
+See our [paper](https://arxiv.org/abs/2511.01689) for further details.
+
+**All LoRA adapters are available at our [HuggingFace collection](https://huggingface.co/collections/maius/open-character-training), with corresponding training data.**
+
+## Training
+
+<p align="middle">
+  <img src="assets/character_training_no_transparent.drawio.png" width="100%"/>
+</p>
+
+1. Set up environment variables. \
+Create `OpenCharacterTraining/.env` and add your:
 ```bash
-export HF_TOKEN=...
-export OPENROUTER_API_KEY=...
-export WANDB_TOKEN=...
-
-curl -sL https://raw.githubusercontent.com/saurav1004/OpenCharacterTraining/main/bootstrap.sh \
-    | bash -s -- humor expx/oct-humor-data
+# to download/upload huggingface models/datasets
+export HF_TOKEN=<your_huggingface_token>
+# to log training on weights & biases
+export WANDB_TOKEN=<your_wandb_token>
 ```
 
-This `bootstrap.sh`:
+2. Set up path variables. \
+Create `OpenCharacterTraining/character/constants.py` and add:
+```python
+DATA_PATH = <path_to_training_and_eval_data>
+MODEL_PATH = <path_to_local_models>
+LORA_PATH = <path_to_local_character_training_loras>
+CONSTITUTION_PATH = <path_to_working_directory>/OpenCharacterTraining/constitutions
+```
 
-1. Sets up cache redirection to `/workspace` (critical on small-disk pods)
-2. Clones this repo, installs dependencies (incl. vLLM + OpenRLHF `--no-deps`)
-3. Builds and installs the `flash_attn_stub` package
-4. Applies the PyTorch ≥ 2.10 LR-scheduler patch
-5. Downloads `meta-llama/Llama-3.1-8B-Instruct` and the `lima` dataset
-6. Pulls teacher data from HF
-7. Runs the 9-step pipeline (`scripts/run_pipeline.sh`) end-to-end with per-stage HF sync
+1. **Constitutions** (`constitutions/hand-written/`)
+   - `template.txt`: write your own constitution and relevant prompts. you can use the other examples as inspiration!
 
-Expected runtime on A100 80 GB with `K=5` (humor): **~4 hours**.
+2. **DPO** (`character/distillation/`):
+   - `gen_prompts.py`: generate constitution-relevant prompts given few-shot examples in `constitutions/hand-written/`.
+   - `teacher.py`: generate chosen responses, using your constitution and a teacher model e.g., GLM 4.5 Air.
+   - `student.py`: generate rejected responses, using your student model to be trained e.g., Llama 3.1 8B (it).
+   - `data.py`: format distillation data for DPO. 
+   - example training configs for OpenRLHF are found in `finetuning/distillation/`
 
-### 3. Pipeline stages
+3. **SFT** (`character/introspection/`):
+   - `self_reflection.py`: generate responses to introspective prompts.
+   - `self_interaction.py`: generate 10-turn self-interactions.
+   - `data.py`: format introspection data for SFT.
+   - example training configs for OpenRLHF are found in `finetuning/introspection/`
 
-| Step | Script | Output |
-|------|--------|--------|
-| 1 | `character.distillation.student`   | student-model continuations |
-| 2 | `scripts/format_dpo_data.py`       | chosen/rejected pairs |
-| 3 | `finetuning/distillation/llama.sh` | DPO LoRA |
-| 4 | `tools/fold_loras.py`              | DPO folded into base weights |
-| 5 | `character.introspection.self_reflection` | self-reflection data |
-| 6 | `character.introspection.self_interaction` (×2) | self-interaction data |
-| 7 | `scripts/format_sft_data.py`       | SFT training targets |
-| 8 | `finetuning/introspection/llama.sh` | SFT LoRA |
-| 9 | `tools/merge_loras.py`             | final persona LoRA (DPO + SFT) |
-
----
-
-## Layout
+## Important Repo Structure
 
 ```
 OpenCharacterTraining/
-├── bootstrap.sh                     # one-command pod setup + pipeline
-├── UPSTREAM.md                      # diff vs maiush/OpenCharacterTraining
-├── requirements-local.txt           # deps for teacher-data generation (CPU)
-├── requirements-pod.txt             # pinned pod env (from reference run)
+├── character/                   
+│   ├── distillation/            # generate fine-tuning data for DPO
+│   │   ├── teacher.py           
+│   │   ├── student.py           
+│   │   ├── data.py              
+│   │   └── gen_prompts.py       
+|   |
+│   ├── introspection/           # generate fine-tuning data for SFT
+│   │   ├── self_reflection.py   
+│   │   ├── self_interaction.py  
+│   │   └── data.py              
+|   |
+│   ├── preferences/             # evaluation: revealed preferences
+│   │   ├── preferences.py       # generate preferences via comparisons
+│   │   ├── judgements.py        # extract chosen traits via LLM-as-judge
+│   │   ├── distributions.ipynb  # analyze trait preference distributions
+│   │   └── plot_delta.ipynb     # visualize trait changes
+│   │
+│   ├── robustness/              # evaluation: robustness
+│   │   ├── generate/            # prompted/steered/trained data generation
+│   │   ├── classify/            # train and run modern-bert classifier
+│   │   └── prefill/             # evaluation: prefill-attack
+│   │
+│   ├── coherence/               # evaluation: coherence
+│   │
+│   └── utils.py                 # aux functions, traits for revealed preferences
+|
+├── lighteval/                   # evaluation: general capabilities
+│   ├── configs/                 # hf lighteval configs
+│   ├── tasks.txt                # eval tasks
+│   └── run.sh                   # run eval
 │
-├── character/                       # upstream + patches
-│   ├── constants.py                 # (new) workspace-aware paths
-│   ├── distillation/student.py      # vLLM `task` kwarg removed
-│   └── introspection/*.py           # vLLM `truncate_prompt_tokens` removed
-│
-├── tools/
-│   ├── fold_loras.py                # apply_lora compat shim (bf16/param_dtype)
-│   └── merge_loras.py               # upstream
-│
-├── finetuning/
-│   └── {distillation,introspection}/llama.sh   # --param_dtype bf16, SDPA, gc
-│
-├── scripts/                         # (new) orchestration layer
-│   ├── teacher_api.py               # OpenRouter async teacher generation
-│   ├── download_lima.py             # gated LIMA dataset
-│   ├── format_dpo_data.py           # single-constitution DPO formatter
-│   ├── format_sft_data.py           # single-constitution SFT formatter
-│   ├── setup_runpod.sh              # pod setup (caches, stub, patches)
-│   ├── run_pipeline.sh              # 9-step pipeline driver
-│   └── sync_to_hf.py                # artifact upload w/ YAML sanitizer
-│
-├── patches/
-│   └── torch_lr_scheduler.patch     # strict=True -> strict=False (torch ≥ 2.10)
-│
-└── flash_attn_stub/                 # mock flash-attn package
-    └── flash_attn/
-        ├── __init__.py
-        ├── bert_padding/
-        ├── ops/triton/cross_entropy.py  # torch-native replacement
-        └── utils/distributed.py
-```
+├── constitutions/              
+│   ├── few-shot/                # JSONL (after prompt generation)
+│   └── hand-written/            # TXT   (hand-written)
+│   
+├── finetuning/                  
+│   ├── distillation/            # DPO fine-tuning scripts
+│   └── introspection/           # SFT fine-tuning scripts
+│   
+├── tools/                       
+│   ├── interactive_it.py        # interactive chat session (vLLM)
+│   ├── merge_loras.py           # merge LoRA adapters
+│   ├── blend_models.py          # blend multiple models
+│   └── upload_model.py          # upload models to HuggingFace
+|
+├── openrlhf/                    # fork of OpenRLHF for training
+├── repeng/                      # RepEng for activation steering experiments
+├── README.md                    
+├── LICENSE                      
+├── requirements.txt             
+└── setup.py
+```                     
 
----
+## License
 
-## Credits
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
-All methodology and the original implementation are by Sharan Maiya et al. (Open Character Training, 2025).
+## Citation
 
 ```bibtex
 @misc{maiya2025opencharactertrainingshaping,
-      title={Open Character Training: Shaping the Persona of AI Assistants through Constitutional AI},
+      title={Open Character Training: Shaping the Persona of AI Assistants through Constitutional AI}, 
       author={Sharan Maiya and Henning Bartsch and Nathan Lambert and Evan Hubinger},
       year={2025},
       eprint={2511.01689},
       archivePrefix={arXiv},
       primaryClass={cs.CL},
-      url={https://arxiv.org/abs/2511.01689}
+      url={https://arxiv.org/abs/2511.01689}, 
 }
 ```
 
-- Paper: <https://arxiv.org/abs/2511.01689>
-- Upstream repo: <https://github.com/maiush/OpenCharacterTraining>
+## Funding
 
-## License
+This work was supported by the ML Alignment & Theory Scholars ([MATS](https://www.matsprogram.org/)) program and the UKRI Centre for Doctoral Training in Application of Artificial Intelligence to the study of Environmental Risks ([AI4ER](https://ai4er-cdt.esc.cam.ac.uk/)) [EP/S022961/1].
 
-MIT (inherited from upstream).
+## Contact
+
+For any queries or information, contact [Sharan Maiya](mailto:sm2783@cam.ac.uk).
+\
+\
+[![Twitter](https://img.shields.io/twitter/url/https/twitter.com/cloudposse.svg?style=social&label=Follow%20%40_maiush)](https://twitter.com/_maiush)
+
+---
+
+<p align="middle">
+  <a href="https://www.matsprogram.org/"><img src="assets/MATS.webp" height="80"/></a>
+  <a href="https://ltl.mmll.cam.ac.uk/"><img src="assets/cambridge_logo.png" height="80"/></a>
+</p>
