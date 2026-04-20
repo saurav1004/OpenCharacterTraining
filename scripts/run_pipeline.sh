@@ -6,16 +6,21 @@
 # (data/distillation/<constitution>.jsonl) already exists.
 #
 # Usage:
-#   bash scripts/run_pipeline.sh <constitution> [hf_repo_id]
+#   bash scripts/run_pipeline.sh <constitution> [hf_dataset_repo] [hf_model_repo]
 #
 # Example:
-#   bash scripts/run_pipeline.sh humor myuser/oct-humor-pipeline
+#   bash scripts/run_pipeline.sh humor myuser/oct-humor-data myuser/oct-llama-3.1-8b-humor
+#
+# Data (teacher / DPO / SFT / introspection) is pushed to <hf_dataset_repo>.
+# LoRA adapters and merged weights are pushed to <hf_model_repo>.
+# If <hf_model_repo> is omitted, <hf_dataset_repo> is used for both.
 #
 set -euo pipefail
 
 # ── Arguments ────────────────────────────────────────────────────────
-CONSTITUTION="${1:?usage: run_pipeline.sh <constitution> [hf_repo_id]}"
-HF_REPO="${2:-${HF_REPO_ID:-}}"
+CONSTITUTION="${1:?usage: run_pipeline.sh <constitution> [hf_dataset_repo] [hf_model_repo]}"
+HF_DATASET_REPO="${2:-${HF_REPO_ID:-}}"
+HF_MODEL_REPO="${3:-${HF_DATASET_REPO}}"
 MODEL="llama-3.1-8b-it"
 FAMILY="llama"
 
@@ -33,19 +38,25 @@ source "${REPO_DIR}/.env" 2>/dev/null || true
 log() { echo "[$(date '+%H:%M:%S')] $*" | tee -a "${LOGFILE}"; }
 
 sync_to_hf() {
-    if [ -z "${HF_REPO}" ]; then
-        return 0
-    fi
     local local_dir="$1"
     local path_in_repo="$2"
     local repo_type="${3:-dataset}"
+    local repo_id
+    if [ "${repo_type}" = "model" ]; then
+        repo_id="${HF_MODEL_REPO}"
+    else
+        repo_id="${HF_DATASET_REPO}"
+    fi
+    if [ -z "${repo_id}" ]; then
+        return 0
+    fi
     if [ ! -d "${local_dir}" ]; then
         log "  sync skip: ${local_dir} does not exist"
         return 0
     fi
-    log "  syncing ${local_dir} -> ${HF_REPO}/${path_in_repo}"
+    log "  syncing ${local_dir} -> ${repo_id} (${repo_type})/${path_in_repo}"
     python "${REPO_DIR}/scripts/sync_to_hf.py" \
-        --repo-id "${HF_REPO}" \
+        --repo-id "${repo_id}" \
         --local-dir "${local_dir}" \
         --path-in-repo "${path_in_repo}" \
         --repo-type "${repo_type}" \
@@ -235,6 +246,9 @@ log "  SFT LoRA:     ${SFT_LORA}"
 log "  Persona LoRA: ${PERSONA_LORA}"
 log "  Distilled:    ${DISTILLED}"
 log "  Log:          ${LOGFILE}"
-if [ -n "${HF_REPO}" ]; then
-    log "  HF Repo:      https://huggingface.co/datasets/${HF_REPO}"
+if [ -n "${HF_DATASET_REPO}" ]; then
+    log "  HF Dataset:   https://huggingface.co/datasets/${HF_DATASET_REPO}"
+fi
+if [ -n "${HF_MODEL_REPO}" ] && [ "${HF_MODEL_REPO}" != "${HF_DATASET_REPO}" ]; then
+    log "  HF Model:     https://huggingface.co/${HF_MODEL_REPO}"
 fi

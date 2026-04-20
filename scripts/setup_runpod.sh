@@ -24,7 +24,7 @@ echo "workspace: ${WORKSPACE}"
 echo ""
 
 # ── 0. Redirect ALL caches to /workspace (50GB container disk is tight) ──
-echo "[0/7] Redirecting caches to ${WORKSPACE}..."
+echo "[0/6] Redirecting caches to ${WORKSPACE}..."
 export HF_HOME="${WORKSPACE}/cache/huggingface"
 export HF_HUB_CACHE="${HF_HOME}/hub"
 export TRANSFORMERS_CACHE="${HF_HOME}/transformers"
@@ -46,7 +46,7 @@ mkdir -p \
     "${TMPDIR}" "${CUDA_CACHE_PATH}"
 
 # ── 1. Directory structure ───────────────────────────────────────────
-echo "[1/7] Creating directory structure..."
+echo "[1/6] Creating directory structure..."
 mkdir -p "${MODELS_DIR}"
 mkdir -p "${LORAS_DIR}"
 mkdir -p "${REPO_DIR}/data"
@@ -54,21 +54,29 @@ mkdir -p "${REPO_DIR}/data"
 # ── 2. Clone / update repo ──────────────────────────────────────────
 GITHUB_REPO="${OCT_GITHUB_REPO:-https://github.com/saurav1004/OpenCharacterTraining.git}"
 if [ ! -f "${REPO_DIR}/setup.py" ]; then
-    echo "[2/7] Cloning OpenCharacterTraining from ${GITHUB_REPO} (no submodules; OpenRLHF installed via pip)..."
+    echo "[2/6] Cloning OpenCharacterTraining from ${GITHUB_REPO} (no submodules; OpenRLHF installed via pip)..."
     git clone "${GITHUB_REPO}" "${REPO_DIR}"
 else
-    echo "[2/7] Repo already present, pulling latest..."
+    echo "[2/6] Repo already present, pulling latest..."
     cd "${REPO_DIR}" && git pull --ff-only || true
 fi
 cd "${REPO_DIR}"
 
 # ── 3. Create .env (always rewrite to keep cache paths in sync) ──────
-echo "[3/7] Writing .env..."
+echo "[3/6] Writing .env..."
+if [ -z "${WANDB_TOKEN:-}" ] || [ "${WANDB_TOKEN}" = "REPLACE_ME" ]; then
+    _WANDB_MODE_LINE="export WANDB_MODE=disabled"
+    echo "  WANDB_TOKEN not set; wandb logging will be disabled."
+else
+    _WANDB_MODE_LINE="# WANDB_TOKEN provided; wandb logging enabled"
+fi
+
 cat > "${REPO_DIR}/.env" <<ENVEOF
 # tokens
 export HF_TOKEN=${HF_TOKEN:-REPLACE_ME}
 export WANDB_TOKEN=${WANDB_TOKEN:-REPLACE_ME}
 export OPENROUTER_API_KEY=${OPENROUTER_API_KEY:-REPLACE_ME}
+${_WANDB_MODE_LINE}
 
 # OCT workspace anchor
 export OCT_WORKSPACE=${WORKSPACE}
@@ -92,7 +100,7 @@ echo "  wrote ${REPO_DIR}/.env"
 source "${REPO_DIR}/.env"
 
 # ── 4. Install Python packages ──────────────────────────────────────
-echo "[4/7] Installing Python packages..."
+echo "[4/6] Installing Python packages..."
 
 pip install --quiet --upgrade pip
 
@@ -261,7 +269,7 @@ pip install --quiet -e "${REPO_DIR}"
 pip install --quiet openai huggingface_hub datasets
 
 # ── 5. Download models ──────────────────────────────────────────────
-echo "[5/7] Downloading models..."
+echo "[5/6] Downloading models..."
 
 LLAMA_DIR="${MODELS_DIR}/llama-3.1-8b-it"
 if [ ! -d "${LLAMA_DIR}" ] || [ -z "$(ls -A "${LLAMA_DIR}" 2>/dev/null)" ]; then
@@ -273,13 +281,10 @@ else
     echo "  Llama-3.1-8B-Instruct already downloaded"
 fi
 
-# ── 6. Download LIMA dataset ────────────────────────────────────────
-echo "[6/7] Downloading LIMA dataset..."
-python "${REPO_DIR}/scripts/download_lima.py" \
-    --output-dir "${MODELS_DIR}/lima"
-
-# ── 7. Symlinks so training shell scripts work unchanged ────────────
-echo "[7/7] Creating symlinks..."
+# ── 6. Symlinks so training shell scripts work unchanged ────────────
+# (LIMA is consumed only by the local teacher-generation step; on the pod
+# the teacher jsonl is pulled from HF, so LIMA is not needed here.)
+echo "[6/6] Creating symlinks..."
 
 create_symlink() {
     local target="$1"

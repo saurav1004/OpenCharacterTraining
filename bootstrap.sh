@@ -4,14 +4,18 @@
 #
 # Usage:
 #   curl -sL https://raw.githubusercontent.com/saurav1004/OpenCharacterTraining/main/bootstrap.sh \
-#       | bash -s -- <constitution> [hf_repo_id]
+#       | bash -s -- <constitution> [hf_dataset_repo] [hf_model_repo]
+#
+# If <hf_model_repo> is omitted, <hf_dataset_repo> is used for both repo
+# types (the Hub accepts same-named repos of different types).
 #
 # Required env vars (set on the pod before piping into bash):
 #   HF_TOKEN            - HuggingFace token with write access
 #   OPENROUTER_API_KEY  - OpenRouter API key (only needed if generating teacher
 #                         data on the pod; not required if teacher data is
 #                         already on HF)
-#   WANDB_TOKEN         - (optional) wandb token for training metrics
+#   WANDB_TOKEN         - wandb token for training metrics. If unset, wandb
+#                         logging is disabled via WANDB_MODE=disabled.
 #
 # What this does:
 #   1. Sets up cache redirection to /workspace (not the container disk)
@@ -22,13 +26,19 @@
 #
 set -euo pipefail
 
-CONSTITUTION="${1:?usage: bootstrap.sh <constitution> [hf_repo_id]}"
-HF_REPO="${2:-${HF_REPO_ID:-}}"
+CONSTITUTION="${1:?usage: bootstrap.sh <constitution> [hf_dataset_repo] [hf_model_repo]}"
+HF_DATASET_REPO="${2:-${HF_REPO_ID:-}}"
+HF_MODEL_REPO="${3:-${HF_DATASET_REPO}}"
 GITHUB_REPO="${OCT_GITHUB_REPO:-https://github.com/saurav1004/OpenCharacterTraining.git}"
 WORKSPACE="/workspace"
 REPO_DIR="${WORKSPACE}/OpenCharacterTraining"
 
 : "${HF_TOKEN:?HF_TOKEN must be set}"
+
+if [ -z "${WANDB_TOKEN:-}" ]; then
+    export WANDB_MODE=disabled
+    echo "[bootstrap] WANDB_TOKEN not set; wandb logging disabled."
+fi
 
 # ── 1. Cache redirection (must be set BEFORE any pip install) ────────
 export HF_HOME="${WORKSPACE}/cache/huggingface"
@@ -68,9 +78,9 @@ source "${REPO_DIR}/.env"
 # ── 4. Pull teacher data if missing ─────────────────────────────────
 TEACHER_FILE="${REPO_DIR}/data/distillation/${CONSTITUTION}.jsonl"
 if [ ! -f "${TEACHER_FILE}" ]; then
-    if [ -n "${HF_REPO}" ]; then
-        echo "[bootstrap] pulling teacher data from ${HF_REPO}..."
-        hf download "${HF_REPO}" \
+    if [ -n "${HF_DATASET_REPO}" ]; then
+        echo "[bootstrap] pulling teacher data from ${HF_DATASET_REPO}..."
+        hf download "${HF_DATASET_REPO}" \
             --repo-type dataset \
             --include "stages/01_distillation.jsonl" "data/distillation/${CONSTITUTION}.jsonl" \
             --local-dir "${REPO_DIR}/_hf_pull" || true
@@ -87,13 +97,14 @@ fi
 if [ ! -f "${TEACHER_FILE}" ]; then
     echo "[bootstrap] ERROR: teacher data not found at ${TEACHER_FILE}"
     echo "           Generate locally with scripts/teacher_api.py and upload to HF,"
-    echo "           or pass a valid hf_repo_id as the second argument."
+    echo "           or pass a valid <hf_dataset_repo> as the second argument."
     exit 1
 fi
 
 # ── 5. Kick off the pipeline in the background ──────────────────────
 echo "[bootstrap] launching pipeline in background..."
-nohup bash scripts/run_pipeline.sh "${CONSTITUTION}" "${HF_REPO}" \
+nohup bash scripts/run_pipeline.sh \
+        "${CONSTITUTION}" "${HF_DATASET_REPO}" "${HF_MODEL_REPO}" \
     > "${WORKSPACE}/pipeline_${CONSTITUTION}.log" 2>&1 &
 PID=$!
 echo "[bootstrap] pipeline PID: ${PID}"

@@ -2,7 +2,7 @@
 # The heavy pod-side deps are handled by scripts/setup_runpod.sh.
 
 openai>=1.0.0
-huggingface_hub>=0.24.0
+huggingface_hub>=0.26.0  # `hf download` / `hf upload` CLI landed in 0.26
 pandas>=2.0.0
 jsonlines>=4.0.0
 tqdm>=4.65.0

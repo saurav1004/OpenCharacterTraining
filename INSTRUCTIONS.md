@@ -11,10 +11,11 @@ Reference artifacts from our run:
 
 ## 0. Prerequisites
 
-Tokens (all three required):
-- `HF_TOKEN` — HuggingFace, write scope
-- `OPENROUTER_API_KEY` — OpenRouter, any paid tier
-- `WANDB_TOKEN` — Weights & Biases
+Tokens:
+- `HF_TOKEN` — HuggingFace, write scope (required)
+- `OPENROUTER_API_KEY` — OpenRouter, any paid tier (required for §1 only)
+- `WANDB_TOKEN` — Weights & Biases (optional; if unset the pipeline sets
+  `WANDB_MODE=disabled` and training still runs, just without wandb logging)
 
 RunPod pod spec:
 - GPU: 1× A100 80 GB (H100 80 GB also works)
@@ -29,10 +30,15 @@ RunPod pod spec:
 ```bash
 git clone https://github.com/saurav1004/OpenCharacterTraining.git
 cd OpenCharacterTraining
+export OCT_WORKSPACE=$PWD
 pip install -r requirements-local.txt
 
 export HF_TOKEN=...
 export OPENROUTER_API_KEY=...
+
+# LIMA prompts are part of the teacher set; skip this and you get a smaller,
+# different model than the published one.
+python scripts/download_lima.py --output-dir models/lima
 
 python scripts/teacher_api.py \
     --constitution humor \
@@ -69,8 +75,14 @@ export OPENROUTER_API_KEY=...
 export WANDB_TOKEN=...
 
 curl -sL https://raw.githubusercontent.com/saurav1004/OpenCharacterTraining/main/bootstrap.sh \
-    | bash -s -- humor <your_hf_user>/oct-humor-data
+    | bash -s -- humor <your_hf_user>/oct-humor-data <your_hf_user>/oct-llama-3.1-8b-humor
 ```
+
+The three positional args are `<constitution>`, `<hf_dataset_repo>`, `<hf_model_repo>`.
+Data (teacher / DPO / SFT / introspection) is pushed to the dataset repo; LoRA
+adapters and merged weights are pushed to the model repo. If you only pass
+one repo id, that id is used for both types (which creates two same-named
+repos of different types on the Hub).
 
 That's it. `bootstrap.sh`:
 
@@ -92,8 +104,9 @@ tail -f /workspace/pipeline_humor.log
 
 Expected runtime on a single A100 80 GB: **~4 hours** at `K=5`.
 
-Per-stage artifacts are pushed to the HF repo you passed as the second
-argument, so the run is resumable and inspectable mid-flight.
+Per-stage artifacts are pushed to HF as they're produced (data → dataset
+repo, LoRAs / merged weights → model repo), so the run is resumable and
+inspectable mid-flight.
 
 ---
 
@@ -151,7 +164,7 @@ hf download <your_hf_user>/oct-humor-data \
 cp _hf_pull/stages/01_distillation.jsonl data/distillation/humor.jsonl
 
 # 5. Run the 9-step pipeline
-bash scripts/run_pipeline.sh humor <your_hf_user>/oct-humor-data
+bash scripts/run_pipeline.sh humor <your_hf_user>/oct-humor-data <your_hf_user>/oct-llama-3.1-8b-humor
 ```
 
 ### Pipeline stages (what `run_pipeline.sh` does)
@@ -168,9 +181,9 @@ bash scripts/run_pipeline.sh humor <your_hf_user>/oct-humor-data
 | 8 | `finetuning/introspection/llama.sh` | SFT LoRA |
 | 9 | `tools/merge_loras.py` | final persona adapter |
 
-Each stage syncs its output to HF before moving to the next, so a crash
-is resumable — just rerun `scripts/run_pipeline.sh humor <hf_repo>` and
-it skips completed stages.
+Each stage syncs its output to HF before moving to the next, so a crash is
+resumable — just rerun the same `scripts/run_pipeline.sh humor <dataset_repo>
+<model_repo>` command and it skips completed stages.
 
 ---
 
