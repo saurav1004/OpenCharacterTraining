@@ -15,7 +15,7 @@ openrlhf.cli.train_sft \
     --train_batch_size 32 \
     --zero_stage 2 \
     --seed 123456 \
-    --bf16 \
+    --param_dtype bf16 \
     --learning_rate 5e-5 \
     --lr_warmup_ratio 0.1 \
     --max_norm 1.0 \
@@ -26,6 +26,8 @@ openrlhf.cli.train_sft \
     --input_key messages \
     --apply_chat_template \
     --max_len 3072 \
+    --attn_implementation sdpa \
+    --gradient_checkpointing \
     --use_wandb True \
     --wandb_project personas-llama-introspection \
     --wandb_run_name $1 \

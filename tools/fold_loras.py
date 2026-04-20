@@ -1,7 +1,23 @@
-import os, shutil
+import os, shutil, inspect
 from openrlhf.cli.lora_combiner import apply_lora
 from character.utils import constitutions
 from character.constants import MODEL_PATH
+
+
+def _apply_lora_compat(**kwargs):
+    """Handle API drift across OpenRLHF versions.
+
+    Upstream historically used `bf16=True`; newer versions use
+    `param_dtype='bf16'` (or `torch_dtype`).  Pick whichever exists.
+    """
+    sig = inspect.signature(apply_lora).parameters
+    if "bf16" in sig:
+        kwargs["bf16"] = True
+    elif "param_dtype" in sig:
+        kwargs["param_dtype"] = "bf16"
+    elif "torch_dtype" in sig:
+        kwargs["torch_dtype"] = "bf16"
+    apply_lora(**kwargs)
 
 
 def main(model_name, model_dir, loras_dir, save_dir_name):
@@ -13,12 +29,11 @@ def main(model_name, model_dir, loras_dir, save_dir_name):
         output_path = f"{MODEL_PATH}/{save_dir_name}/{model_name}-{cons}"
         if os.path.exists(output_path) and os.listdir(output_path): continue
         os.makedirs(os.path.dirname(output_path), exist_ok=True)
-        apply_lora(
+        _apply_lora_compat(
             model_name_or_path=model_path,
             lora_path=lora_path,
             output_path=output_path,
             is_rm=False,
-            bf16=True,
         )
         # copy over any missing files (but not any directories and not any safetensors)
         for file in os.listdir(model_path):
