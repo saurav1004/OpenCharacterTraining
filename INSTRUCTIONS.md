@@ -42,10 +42,9 @@ python scripts/download_lima.py --output-dir models/lima
 
 python scripts/teacher_api.py \
     --constitution humor \
-    --teacher z-ai/glm-4.5-air \
-    --model llama-3.1-8b-it \
+    --model z-ai/glm-4.5-air \
     --K 5 \
-    --max-tokens 2048 \
+    --max_tokens 2048 \
     --concurrency 100
 ```
 
